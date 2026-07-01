@@ -2,9 +2,11 @@
 import pyautogui
 import time
 import pandas
+import logging
 from datetime import datetime
 from botcity.core import DesktopBot
 from selenium import webdriver
+from selenium.common import TimeoutException
 from selenium.webdriver.chrome.service import Service as ChromeService
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.support.ui import WebDriverWait
@@ -19,34 +21,25 @@ from tkinter import filedialog
 from multiprocessing import Process
 from selenium.webdriver.common.keys import Keys
 
-#Alimentando todos os arquivos do diretório numa variavel
-
-
-# class MeuBot(DesktopBot):
-#     def action(self, execution=None):
-#         while True:
-#             if self.find("ok", matching=0.87, waiting_time=10000):
-#                 self.click()
-#                 time.sleep(5)
-#                 print("achamos o OK")
-#             if self.find("precisaF5", matching=0.87, waiting_time=5000):
-#                 print("Dar F5")
-#                 if self.find("aberturaEdge", matching=0.87, waiting_time=5000):
-#                     self.click()
-#                     print("Dei F5") 
-#             else:
-#                 print("Botão não encontrado.")
-#             time.sleep(15)
-# def monitorar_popup():
-#     bot = MeuBot()
-#     bot.action()
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler("bot.log", encoding="utf-8"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 def automacao_selenium():
     root = tk.Tk()
     root.withdraw()
 
     # Abre o seletor de arquivos
-    caminho_arquivo = filedialog.askopenfilename(title="Selecione um arquivo")
+    # PATH =
+    caminho_arquivo = filedialog.askopenfilename(title="Caminho do arquivo excel: ")
+    caminho_arquivo_nfs = filedialog.askdirectory(title="Caminho da pasta dos anexos: ")
+    # caminho_arquivo = 'C:\\Visual_Rodopar\\Bot_Subir_Notas\\Planilha NF.xlsx'
     chrome_options = Options()
     chrome_options.add_argument("--start-maximized")
     chrome_options.add_argument("--ignore-certificate-errors")
@@ -54,7 +47,7 @@ def automacao_selenium():
     chrome_options.set_capability("acceptInsecureCerts", True)
     driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=chrome_options)
     driver.get('https://service-2.ariba.com/Supplier.aw/')
-    
+
     Logando = True
     wait = WebDriverWait(driver, 10)
     #Rodando a pasta
@@ -72,9 +65,10 @@ def automacao_selenium():
                 pyautogui.alert(f"Erro ao acessar a coluna '{coluna}'. Verifique se ela existe na planilha.")
                 raise e
         #Informar o código inicial da fatura
+        classificacao_lc = pegar_valor('Classificação LC 116/2003')
         contrato = pegar_valor('Contrato').split('.')[0]
         rm = pegar_valor('RM')
-        CNPJMir = pegar_valor('CNPJ')
+        CNPJMir = pegar_valor('CNPJ MIRASSOL')
         CNPJPetro = '33.000.167/0001-01'
         valorRetencao = pegar_valor('Valor Retencao')
         municipio_raw = pegar_valor('Cidade Origem')
@@ -82,17 +76,17 @@ def automacao_selenium():
         Nota = pegar_valor('N° NF')
         Filial = pegar_valor('FILIAL')
         serie = pegar_valor('Serie')
-        print("agora vem o primeiro bot")
+        logger.info("agora vem o primeiro bot")
         if "/" in municipio_raw:
             cidade, uf = municipio_raw.split("/", 1)
             municipio = f"{cidade.strip()} ({uf.strip()})"
         else:
             municipio = municipio_raw
-        NumeroNota = Nota.split(serie)[1] 
-        print(Nota)
+        NumeroNota = Nota
+        logger.info(Nota)
         while Logando:
             try:
-                                                
+
                 wait.until(EC.visibility_of_element_located((By.ID, 'userid')))
                 campoUsuario = driver.find_element(By.ID, 'userid')
                 if CNPJMir == '14.937.348/0004-67':
@@ -116,18 +110,18 @@ def automacao_selenium():
                 campoUsuario.send_keys(login)
                 break
             except:
-                print("Campo de usuário não encontrado")
-                
-        
+                logger.warning("Campo de usuário não encontrado")
+
+
         while Logando:
             try:
                 wait.until(EC.element_to_be_clickable((By.ID, '_sy6frd')))
                 btnAvancar = driver.find_element(By.ID, '_sy6frd')
                 btnAvancar.click()
                 break
-            except: 
-                print("Botão entrar usuário não encontrado")
-        
+            except:
+                logger.warning("Botão entrar usuário não encontrado")
+
         while Logando:
             try:
                 wait.until(EC.visibility_of_element_located((By.ID, 'Password')))
@@ -135,9 +129,9 @@ def automacao_selenium():
                 campoSenha.send_keys(senha)
                 break
             except:
-                
-                print("Campo de senha não encontrado")
-        
+
+                logger.warning("Campo de senha não encontrado")
+
         while Logando:
             try:
                 wait.until(EC.element_to_be_clickable((By.ID, 'submitButton')))
@@ -145,9 +139,9 @@ def automacao_selenium():
                 btnEntrar.click()
                 break
             except:
-                print("Botão entrar senha não encontrado")
-                
-        
+                logger.warning("Botão entrar senha não encontrado")
+
+
         while True:
             try:
                 driver.execute_script("""
@@ -157,7 +151,7 @@ def automacao_selenium():
     }
     """)
             except:
-                print("aaa")
+                logger.debug("aaa")
             try:
                 time.sleep(5)
                 wait.until(EC.element_to_be_clickable((By.ID, 'truste-consent-button')))
@@ -166,7 +160,16 @@ def automacao_selenium():
                 btnCookies.click()
                 time.sleep(5)
             except:
-                print("Não achei os cookies")             
+                logger.warning("Não achei os cookies")
+
+            try:
+                btnFechar = wait.until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, '.target-lt-popupv2-close'))
+                )
+                btnFechar.click()
+            except TimeoutException:
+                logger.warning("Não achei o pop-up")
+
             try:
                 wait.until(EC.element_to_be_clickable((By.ID, 'create-btn')))
                 btnCriar = driver.find_element(By.ID, 'create-btn')
@@ -175,7 +178,7 @@ def automacao_selenium():
                 Logando = False
                 break
             except:
-                print("Botão criar não encontrado")
+                logger.warning("Botão criar não encontrado")
         while True:
             try:
                 driver.execute_script("""
@@ -185,14 +188,14 @@ def automacao_selenium():
     }
     """)
             except:
-                print("aaa")
+                logger.debug("aaa")
             try:
                 wait.until(EC.element_to_be_clickable((By.ID, 'an.non_po_invoice')))
                 btnFaturaForadaPO = driver.find_element(By.ID, 'an.non_po_invoice')
                 btnFaturaForadaPO.click()
                 break
             except:
-                print("Botão fatura fora da PO não encontrado")
+                logger.warning("Botão fatura fora da PO não encontrado")
         while True:
             try:
                 wait.until(EC.element_to_be_clickable((By.ID, '_lsd8ld')))
@@ -200,7 +203,7 @@ def automacao_selenium():
                 btnAvancarFatura.click()
                 break
             except:
-                print("Botão avançar fatura não encontrado")
+                logger.warning("Botão avançar fatura não encontrado")
         while True:
             try:
                 wait.until(EC.visibility_of_element_located((By.ID, '_sarwgb')))
@@ -208,7 +211,7 @@ def automacao_selenium():
                 inputNotaFiscal.send_keys(NumeroNota)
                 break
             except:
-                print("Campo de nota fiscal não encontrado")
+                logger.warning("Campo de nota fiscal não encontrado")
         while True:
             try:
                 wait.until(EC.element_to_be_clickable((By.ID, '_rqrdvc')))
@@ -222,7 +225,7 @@ def automacao_selenium():
                         break
                 break
             except:
-                print("Botão modelo documento fiscal não encontrado")
+                logger.warning("Botão modelo documento fiscal não encontrado")
         while True:
             try:
                 wait.until(EC.element_to_be_clickable((By.ID, '_2h2c5c')))
@@ -231,7 +234,7 @@ def automacao_selenium():
                 btnAdicionarAnexo.click()
                 break
             except:
-                print("Botão adicionar anexo não encontrado")
+                logger.warning("Botão adicionar anexo não encontrado")
         while True:
             try:
                 wait.until(EC.element_to_be_clickable((By.ID, '_jbqvrb')))
@@ -240,19 +243,20 @@ def automacao_selenium():
                 btnAnexo.click()
                 break
             except:
-                print("Botão anexo não encontrado")
+                logger.warning("Botão anexo não encontrado")
         contando=0
         while True:
             try:
-                print(Filial)
-                print(Nota)
+                logger.info(Filial)
+                logger.info(Nota)
                 contando+=1
                 file_input = driver.find_element(By.NAME, "_lqy5hc")
                 driver.execute_script("arguments[0].scrollIntoView(true);", file_input)
-                file_input.send_keys(r'C:\Visual_Rodopar\NFs ' + Nota + '.pdf')
+                # caminho_arquivo_nfs = filedialog.askdirectory(title="Caminho dos anexos: ")
+                file_input.send_keys(caminho_arquivo_nfs + '\\' + serie + '-' + Nota + '.pdf')
                 break
             except:
-                print("Campo de arquivo não encontrado")
+                logger.warning("Campo de arquivo não encontrado")
                 if contando > 100:
                     pyautogui.alert(f"Arquivo-{Nota}.pdf não encontrado")
                     sys.exit()
@@ -264,7 +268,7 @@ def automacao_selenium():
                 btnAdicionarAnexo.click()
                 break
             except:
-                print("Botão adicionar anexo não encontrado") 
+                logger.warning("Botão adicionar anexo não encontrado")
         while True:
             try:
                 wait.until(EC.visibility_of_element_located((By.ID, '_8wvuvc')))
@@ -279,7 +283,7 @@ def automacao_selenium():
                         break
                 break
             except:
-                print("Botão Lastro Obrigacao não encontrado")
+                logger.warning("Botão Lastro Obrigacao não encontrado")
         while True:
             try:
                 wait.until(EC.visibility_of_element_located((By.ID, '_hal28')))
@@ -294,7 +298,7 @@ def automacao_selenium():
                         break
                 break
             except:
-                print("Botão Identificação não encontrado")
+                logger.warning("Botão Identificação não encontrado")
         while True:
             try:
                 driver.implicitly_wait(10)
@@ -304,7 +308,7 @@ def automacao_selenium():
                 btnAtualizar.click()
                 break
             except:
-                print("Botão atualizar não encontrado")
+                logger.warning("Botão atualizar não encontrado")
         while True:
             try:
                 wait.until(EC.visibility_of_element_located((By.ID, '_sm64zb')))
@@ -313,7 +317,7 @@ def automacao_selenium():
                 inputContrato.send_keys(contrato)
                 break
             except:
-                print("Campo de contrato não encontrado")
+                logger.warning("Campo de contrato não encontrado")
         while True:
             try:
                 wait.until(EC.visibility_of_element_located((By.ID, '__rpqab')))
@@ -322,7 +326,7 @@ def automacao_selenium():
                 inputRM.send_keys(str(rm).split('.')[0])
                 break
             except:
-                print("Campo de RM não encontrado")
+                logger.warning("Campo de RM não encontrado")
         while True:
             try:
                 wait.until(EC.visibility_of_element_located((By.ID, '_ggf0yb')))
@@ -331,7 +335,7 @@ def automacao_selenium():
                 inputCNPJ.send_keys(CNPJMir)
                 break
             except:
-                print("Campo de CNPJ não encontrado")
+                logger.warning("Campo de CNPJ não encontrado")
         while True:
             try:
                 wait.until(EC.visibility_of_element_located((By.ID, '_ed1r0b')))
@@ -340,7 +344,7 @@ def automacao_selenium():
                 inputTomador.send_keys(CNPJPetro)
                 break
             except:
-                print("Campo de tomador não encontrado")
+                logger.warning("Campo de tomador não encontrado")
         while True:
             try:
                 wait.until(EC.element_to_be_clickable((By.ID, '_nsg0hd')))
@@ -365,7 +369,7 @@ def automacao_selenium():
                 # btnMunicipio.send_keys(Keys.ENTER)
                 break
             except:
-                print("Escolha de Município não encontrada")
+                logger.warning("Escolha de Município não encontrada")
         # while True:
         #     try:
         #         wait.until(EC.element_to_be_clickable((By.ID, '_nsg0hd')))
@@ -382,6 +386,12 @@ def automacao_selenium():
         #     except:
         #         print("Escolha de Município não encontrada")
         while True:
+            
+            if classificacao_lc == '16.02':
+                classificacao = '16.02 Outros serviços de transporte de natureza municipal.'
+            elif classificacao_lc == '11.04':
+                classificacao = '11.04 Armazenamento, depósito, carga, descarga, arrumação e guarda de bens de qualquer espécie.'   
+
             try:
                 wait.until(EC.element_to_be_clickable((By.ID, '_z2jfab')))
                 btnLC = driver.find_element(By.ID, '_z2jfab')
@@ -389,12 +399,12 @@ def automacao_selenium():
                 btnLC.click()
                 drop93 = driver.find_elements(By.CLASS_NAME, 'w-dropdown-item')
                 for item in drop93[::-1]:
-                    if '16.02 Outros serviços de transporte de natureza municipal. (Incluído pela Lei Complementar nº 157, de 2016)' in item.text:
+                    if classificacao in item.text:
                         item.click()
                         break
                 break
             except:
-                print("Escolha de classificação LC não encontrada")
+                logger.warning("Escolha de classificação LC não encontrada")
         while True:
             try:
                 wait.until(EC.visibility_of_element_located((By.ID, '_$dddb')))
@@ -403,7 +413,7 @@ def automacao_selenium():
                 inputTomador.send_keys(str(valorRetencao).replace('.',',').replace('-', ''))
                 break
             except:
-                print("Campo de valor retencao não encontrado")
+                logger.warning("Campo de valor retencao não encontrado")
 
         while True:
             try:
@@ -413,7 +423,7 @@ def automacao_selenium():
                 btnAdicionar.click()
                 break
             except:
-                print("Botão Adicionar não encontrado")
+                logger.warning("Botão Adicionar não encontrado")
         while True:
             try:
                 wait.until(EC.element_to_be_clickable((By.ID, '_ipc3qb')))
@@ -422,7 +432,7 @@ def automacao_selenium():
                 btnGeral.click()
                 break
             except:
-                print("Botão Geral não encontrado")
+                logger.warning("Botão Geral não encontrado")
         while True:
             try:
                 wait.until(EC.element_to_be_clickable((By.ID, '_xayoyc')))
@@ -431,7 +441,7 @@ def automacao_selenium():
                 inputQt.send_keys('1')
                 break
             except:
-                print("Input Quantidade de Itens não encontrado")
+                logger.warning("Input Quantidade de Itens não encontrado")
         while True:
             try:
                 wait.until(EC.element_to_be_clickable((By.ID, '_29vmnb')))
@@ -440,45 +450,44 @@ def automacao_selenium():
                 inputPreco.send_keys(str(ValorSAP).replace('.',',').replace('-', ''))
                 break
             except:
-                print("Input Preço não encontrado")
-        while True:
-            try:
-                div_elements = WebDriverWait(driver, 20).until(
-                EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.w-chk.w-chk-dsize")))
-                total_divs = len(div_elements)
-                print(f"Total de <div> encontrados: {total_divs}")
-                for div_element in div_elements:
-                    try:
-                        WebDriverWait(driver, 10).until(
-                        EC.element_to_be_clickable(div_element))
-                        div_element.click()
-                        print("Elemento clicado com sucesso.")
-                    except Exception as e:
-                        print("Erro ao clicar no elemento:", e)
-                break
-            except Exception as e:
-                print("Erro ao localizar os elementos:", e)
+                logger.warning("Input Preço não encontrado")
+            # try:
+            #     div_elements = WebDriverWait(driver, 20).until(
+            #     EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.w-chk.w-chk-dsize")))
+            #     total_divs = len(div_elements)
+            #     print(f"Total de <div> encontrados: {total_divs}")
+            #     for div_element in div_elements:
+            #         try:
+            #             WebDriverWait(driver, 10).until(
+            #             EC.element_to_be_clickable(div_element))
+            #             div_element.click()
+            #             print("Elemento clicado com sucesso.")
+            #         except Exception as e:
+            #             print("Erro ao clicar no elemento:", e)
+            #     break
+            # except Exception as e:
+            #     print("Erro ao localizar os elementos:", e)
         while True:
             try:
                 time.sleep(3)
                 div_elements = WebDriverWait(driver, 20).until(
                 EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.w-chk.w-chk-dsize")))
                 total_divs = len(div_elements)
-                print(f"Total de <div> encontrados: {total_divs}")
+                logger.info(f"Total de <div> encontrados: {total_divs}")
                 if total_divs > 0:
                     last_div = div_elements[-1]
                     try:
                         WebDriverWait(driver, 10).until(
                         EC.element_to_be_clickable(last_div))
                         last_div.click()
-                        print("Último elemento clicado com sucesso.")
+                        logger.info("Último elemento clicado com sucesso.")
                     except Exception as e:
-                        print("Erro ao clicar no último elemento:", e)
+                        logger.error(f"Erro ao clicar no último elemento: {e}")
                 else:
-                    print("Nenhum elemento foi encontrado para clicar.")
+                    logger.warning("Nenhum elemento foi encontrado para clicar.")
                 break
             except Exception as e:
-                print("Erro ao localizar os elementos:", e)
+                logger.error(f"Erro ao localizar os elementos: {e}")
         time.sleep(5)
         while True:
             try:
@@ -488,7 +497,7 @@ def automacao_selenium():
                 btnAvancar.click()
                 break
             except:
-                print("Botão Avançar não encontrado")
+                logger.warning("Botão Avançar não encontrado")
         while True:
             try:
                 wait.until(EC.presence_of_element_located((By.CLASS_NAME, "multiDivContainer")))
@@ -500,7 +509,7 @@ def automacao_selenium():
                 btnEnviar.click()
                 break
             except:
-                print("Botão Enviar não encontrado")
+                logger.warning("Botão Enviar não encontrado")
         while True:
             try:
                 wait.until(EC.element_to_be_clickable((By.ID, '_qfivt')))
@@ -511,24 +520,22 @@ def automacao_selenium():
                 # driver.get('https://portal.us.bn.cloud.ariba.com/dashboard/home')
                 break
             except:
-                print("Botão Sair não encontrado")
+                logger.warning("Botão Sair não encontrado")
         # with open(r'C:\Visual_Rodopar\Sub\Enviados.txt', 'a') as file:
-        #     file.write("Fatura " + 'se' + '-'+ NumeroNota + ", em " + datetime.now().strftime('%d/%m/%Y %H:%M:%S \n'))                    
+        #     file.write("Fatura " + 'se' + '-'+ NumeroNota + ", em " + datetime.now().strftime('%d/%m/%Y %H:%M:%S \n'))
         # driver.get('https://portal.us.bn.cloud.ariba.com/dashboard/home')
         first_line = listaFaturas.iloc[0]
         listaFaturas = listaFaturas.iloc[1:]
         listaFaturas.to_excel(caminho_arquivo, index=False)
 
 if __name__ == "__main__":
-    # Inicia o processo do bot que fecha popups
-    # p = Process(target=monitorar_popup)
-    # p.start()
+    logger.info("Inicia o processo do bot que fecha popups")
 
     try:
-        # Roda sua automação normalmente
         automacao_selenium()
+    except Exception as e:
+        logger.error(f"Ocorreu um erro durante a execução do bot: {e}")
+    
     finally:
-        # Encerra o processo do bot depois que a automação terminar
-        # p.terminate()
-        # p.join()
-        print('ok')
+        logger.info("Encerra o processo do bot depois que a automação terminar")
+        logger.info('ok')
