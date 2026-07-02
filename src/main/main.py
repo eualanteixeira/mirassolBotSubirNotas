@@ -1,8 +1,10 @@
 #teste
 import pyautogui
 import time
-import pandas
+import os
 import logging
+import keyboard
+from plyer import notification
 from datetime import datetime
 from botcity.core import DesktopBot
 from selenium import webdriver
@@ -21,15 +23,75 @@ from tkinter import filedialog
 from multiprocessing import Process
 from selenium.webdriver.common.keys import Keys
 
+base_dir = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
+log_dir = os.path.join(base_dir, "log")
+os.makedirs(log_dir, exist_ok=True)
+log_filename = os.path.join(log_dir, datetime.now().strftime("%Y_%m_%d_%H_%M_%S.log"))
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler("bot.log", encoding="utf-8"),
+        logging.FileHandler(log_filename, encoding="utf-8"),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
+
+class ControleExecucao:
+    """Controla pausa/retomada e encerramento da automação via hotkeys globais."""
+
+    def __init__(self):
+        self.pausado = False
+        self.rodando = True
+        self.driver = None
+
+    def alternar_pausa(self):
+        self.pausado = not self.pausado
+        if self.pausado:
+            print("Automação pausada")
+            logger.info("Automação pausada (ctrl+shift+space)")
+            self.notificar("Automação pausada")
+        else:
+            print("Automação retomada")
+            logger.info("Automação retomada (ctrl+shift+space)")
+            self.notificar("Automação retomada")
+
+    def finalizar(self):
+        print("Encerrando automação")
+        logger.info("Encerramento solicitado (ctrl+shift+q)")
+        self.notificar("Encerrando automação")
+        if self.driver is not None:
+            try:
+                self.driver.quit()
+            except Exception as e:
+                logger.error(f"Erro ao encerrar o driver do Chrome: {e}")
+        os.system("taskkill /f /im chromedriver.exe")
+        self.rodando = False
+
+    def checkpoint(self):
+        while self.pausado and self.rodando:
+            time.sleep(0.2)
+        if not self.rodando:
+            raise SystemExit("Automação encerrada pelo usuário")
+
+    def iniciar_hotkeys(self):
+        keyboard.add_hotkey('ctrl+shift+space', self.alternar_pausa)
+        keyboard.add_hotkey('ctrl+shift+q', self.finalizar)
+
+    def notificar(self, mensagem):
+        try:
+            notification.notify(
+                title="Bot Subir NF",
+                app_name="Bot Subir NF",
+                message=mensagem,
+                timeout=3,
+            )
+        except Exception as e:
+            logger.error(f"Erro ao enviar notificação: {e}")
+
+
+controle = ControleExecucao()
+
 
 def automacao_selenium():
     root = tk.Tk()
@@ -40,21 +102,25 @@ def automacao_selenium():
     caminho_arquivo = filedialog.askopenfilename(title="Caminho do arquivo excel: ")
     caminho_arquivo_nfs = filedialog.askdirectory(title="Caminho da pasta dos anexos: ")
     # caminho_arquivo = 'C:\\Visual_Rodopar\\Bot_Subir_Notas\\Planilha NF.xlsx'
+    controle.iniciar_hotkeys()
+    logger.info("Hotkeys ativas: ctrl+shift+space pausa/retoma o bot, ctrl+shift+q encerra o bot.")
     chrome_options = Options()
     chrome_options.add_argument("--start-maximized")
     chrome_options.add_argument("--ignore-certificate-errors")
     chrome_options.add_argument("--allow-running-insecure-content")
     chrome_options.set_capability("acceptInsecureCerts", True)
     driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=chrome_options)
+    controle.driver = driver
     driver.get('https://service-2.ariba.com/Supplier.aw/')
 
     Logando = True
     wait = WebDriverWait(driver, 10)
     #Rodando a pasta
     #Ler a lista de faturas a extrair
-    listaFaturas = pandas.read_excel(caminho_arquivo)
+    listaFaturas = pd.read_excel(caminho_arquivo)
     feitos = pd.DataFrame(columns=listaFaturas.columns)
     for Faturas in range(len(listaFaturas)):
+        controle.checkpoint()
         contador = 0
         login=""
         senha=""
@@ -111,6 +177,7 @@ def automacao_selenium():
                 break
             except:
                 logger.warning("Campo de usuário não encontrado")
+                controle.checkpoint()
 
 
         while Logando:
@@ -121,6 +188,7 @@ def automacao_selenium():
                 break
             except:
                 logger.warning("Botão entrar usuário não encontrado")
+                controle.checkpoint()
 
         while Logando:
             try:
@@ -131,6 +199,7 @@ def automacao_selenium():
             except:
 
                 logger.warning("Campo de senha não encontrado")
+                controle.checkpoint()
 
         while Logando:
             try:
@@ -140,6 +209,7 @@ def automacao_selenium():
                 break
             except:
                 logger.warning("Botão entrar senha não encontrado")
+                controle.checkpoint()
 
 
         while True:
@@ -161,6 +231,7 @@ def automacao_selenium():
                 time.sleep(5)
             except:
                 logger.warning("Não achei os cookies")
+                controle.checkpoint()
 
             try:
                 btnFechar = wait.until(
@@ -169,6 +240,7 @@ def automacao_selenium():
                 btnFechar.click()
             except TimeoutException:
                 logger.warning("Não achei o pop-up")
+                controle.checkpoint()
 
             try:
                 wait.until(EC.element_to_be_clickable((By.ID, 'create-btn')))
@@ -179,6 +251,7 @@ def automacao_selenium():
                 break
             except:
                 logger.warning("Botão criar não encontrado")
+                controle.checkpoint()
         while True:
             try:
                 driver.execute_script("""
@@ -196,6 +269,7 @@ def automacao_selenium():
                 break
             except:
                 logger.warning("Botão fatura fora da PO não encontrado")
+                controle.checkpoint()
         while True:
             try:
                 wait.until(EC.element_to_be_clickable((By.ID, '_lsd8ld')))
@@ -204,6 +278,7 @@ def automacao_selenium():
                 break
             except:
                 logger.warning("Botão avançar fatura não encontrado")
+                controle.checkpoint()
         while True:
             try:
                 wait.until(EC.visibility_of_element_located((By.ID, '_sarwgb')))
@@ -212,6 +287,7 @@ def automacao_selenium():
                 break
             except:
                 logger.warning("Campo de nota fiscal não encontrado")
+                controle.checkpoint()
         while True:
             try:
                 wait.until(EC.element_to_be_clickable((By.ID, '_rqrdvc')))
@@ -226,6 +302,7 @@ def automacao_selenium():
                 break
             except:
                 logger.warning("Botão modelo documento fiscal não encontrado")
+                controle.checkpoint()
         while True:
             try:
                 wait.until(EC.element_to_be_clickable((By.ID, '_2h2c5c')))
@@ -235,6 +312,7 @@ def automacao_selenium():
                 break
             except:
                 logger.warning("Botão adicionar anexo não encontrado")
+                controle.checkpoint()
         while True:
             try:
                 wait.until(EC.element_to_be_clickable((By.ID, '_jbqvrb')))
@@ -244,6 +322,7 @@ def automacao_selenium():
                 break
             except:
                 logger.warning("Botão anexo não encontrado")
+                controle.checkpoint()
         contando=0
         while True:
             try:
@@ -257,6 +336,7 @@ def automacao_selenium():
                 break
             except:
                 logger.warning("Campo de arquivo não encontrado")
+                controle.checkpoint()
                 if contando > 100:
                     pyautogui.alert(f"Arquivo-{Nota}.pdf não encontrado")
                     sys.exit()
@@ -269,6 +349,7 @@ def automacao_selenium():
                 break
             except:
                 logger.warning("Botão adicionar anexo não encontrado")
+                controle.checkpoint()
         while True:
             try:
                 wait.until(EC.visibility_of_element_located((By.ID, '_8wvuvc')))
@@ -284,6 +365,7 @@ def automacao_selenium():
                 break
             except:
                 logger.warning("Botão Lastro Obrigacao não encontrado")
+                controle.checkpoint()
         while True:
             try:
                 wait.until(EC.visibility_of_element_located((By.ID, '_hal28')))
@@ -299,6 +381,7 @@ def automacao_selenium():
                 break
             except:
                 logger.warning("Botão Identificação não encontrado")
+                controle.checkpoint()
         while True:
             try:
                 driver.implicitly_wait(10)
@@ -309,6 +392,7 @@ def automacao_selenium():
                 break
             except:
                 logger.warning("Botão atualizar não encontrado")
+                controle.checkpoint()
         while True:
             try:
                 wait.until(EC.visibility_of_element_located((By.ID, '_sm64zb')))
@@ -318,6 +402,7 @@ def automacao_selenium():
                 break
             except:
                 logger.warning("Campo de contrato não encontrado")
+                controle.checkpoint()
         while True:
             try:
                 wait.until(EC.visibility_of_element_located((By.ID, '__rpqab')))
@@ -327,6 +412,7 @@ def automacao_selenium():
                 break
             except:
                 logger.warning("Campo de RM não encontrado")
+                controle.checkpoint()
         while True:
             try:
                 wait.until(EC.visibility_of_element_located((By.ID, '_ggf0yb')))
@@ -336,6 +422,7 @@ def automacao_selenium():
                 break
             except:
                 logger.warning("Campo de CNPJ não encontrado")
+                controle.checkpoint()
         while True:
             try:
                 wait.until(EC.visibility_of_element_located((By.ID, '_ed1r0b')))
@@ -345,6 +432,7 @@ def automacao_selenium():
                 break
             except:
                 logger.warning("Campo de tomador não encontrado")
+                controle.checkpoint()
         while True:
             try:
                 wait.until(EC.element_to_be_clickable((By.ID, '_nsg0hd')))
@@ -370,6 +458,7 @@ def automacao_selenium():
                 break
             except:
                 logger.warning("Escolha de Município não encontrada")
+                controle.checkpoint()
         # while True:
         #     try:
         #         wait.until(EC.element_to_be_clickable((By.ID, '_nsg0hd')))
@@ -405,6 +494,7 @@ def automacao_selenium():
                 break
             except:
                 logger.warning("Escolha de classificação LC não encontrada")
+                controle.checkpoint()
         while True:
             try:
                 wait.until(EC.visibility_of_element_located((By.ID, '_$dddb')))
@@ -414,6 +504,7 @@ def automacao_selenium():
                 break
             except:
                 logger.warning("Campo de valor retencao não encontrado")
+                controle.checkpoint()
 
         while True:
             try:
@@ -424,6 +515,7 @@ def automacao_selenium():
                 break
             except:
                 logger.warning("Botão Adicionar não encontrado")
+                controle.checkpoint()
         while True:
             try:
                 wait.until(EC.element_to_be_clickable((By.ID, '_ipc3qb')))
@@ -433,6 +525,7 @@ def automacao_selenium():
                 break
             except:
                 logger.warning("Botão Geral não encontrado")
+                controle.checkpoint()
         while True:
             try:
                 wait.until(EC.element_to_be_clickable((By.ID, '_xayoyc')))
@@ -442,6 +535,7 @@ def automacao_selenium():
                 break
             except:
                 logger.warning("Input Quantidade de Itens não encontrado")
+                controle.checkpoint()
         while True:
             try:
                 wait.until(EC.element_to_be_clickable((By.ID, '_29vmnb')))
@@ -451,6 +545,7 @@ def automacao_selenium():
                 break
             except:
                 logger.warning("Input Preço não encontrado")
+                controle.checkpoint()
             # try:
             #     div_elements = WebDriverWait(driver, 20).until(
             #     EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.w-chk.w-chk-dsize")))
@@ -498,6 +593,7 @@ def automacao_selenium():
                 break
             except:
                 logger.warning("Botão Avançar não encontrado")
+                controle.checkpoint()
         while True:
             try:
                 wait.until(EC.presence_of_element_located((By.CLASS_NAME, "multiDivContainer")))
@@ -510,6 +606,7 @@ def automacao_selenium():
                 break
             except:
                 logger.warning("Botão Enviar não encontrado")
+                controle.checkpoint()
         while True:
             try:
                 wait.until(EC.element_to_be_clickable((By.ID, '_qfivt')))
@@ -521,6 +618,7 @@ def automacao_selenium():
                 break
             except:
                 logger.warning("Botão Sair não encontrado")
+                controle.checkpoint()
         # with open(r'C:\Visual_Rodopar\Sub\Enviados.txt', 'a') as file:
         #     file.write("Fatura " + 'se' + '-'+ NumeroNota + ", em " + datetime.now().strftime('%d/%m/%Y %H:%M:%S \n'))
         # driver.get('https://portal.us.bn.cloud.ariba.com/dashboard/home')
@@ -533,9 +631,11 @@ if __name__ == "__main__":
 
     try:
         automacao_selenium()
+    except SystemExit as e:
+        logger.info(str(e))
     except Exception as e:
         logger.error(f"Ocorreu um erro durante a execução do bot: {e}")
-    
+
     finally:
         logger.info("Encerra o processo do bot depois que a automação terminar")
         logger.info('ok')

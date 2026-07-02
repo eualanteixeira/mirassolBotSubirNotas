@@ -1,6 +1,0 @@
-botcity-framework-core
-selenium
-webdriver-manager
-pandas
-openpyxl
-pyautogui
